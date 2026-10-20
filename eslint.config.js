@@ -29,6 +29,11 @@ export default defineConfig([
     extends: [reactHooks.configs.flat['recommended-latest'], reactRefresh.configs.vite],
   },
   {
+    // shadcn/ui primitives are vendored and co-export variant helpers by design.
+    files: ['src/components/ui/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     files: ['**/*.js'],
     extends: [js.configs.recommended],
   },
