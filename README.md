@@ -59,6 +59,20 @@ Verification:
   algorithm disagreement of 1 m or more. CI runs it on every deploy and writes the report to
   the job summary.
 
+## Using the app
+
+- **Drag** to rotate, **scroll** or pinch to zoom.
+- **Hover** a satellite for its name; **click** to select it and open the info panel (live
+  position, altitude, speed, orbit summary, element age). **Fly to** centres the camera on it;
+  **Follow** keeps it centred until you drag. <kbd>Esc</kbd> deselects.
+- **Search & filter** (top left): find by name, NORAD ID or international designator; filter
+  by orbit regime and constellation. Constellations are matched by object name, since the
+  catalog carries no group membership.
+- **Time** (bottom): pause, rates from −600× to 3600×, and **Now**.
+
+Picking is done on the GPU: satellite IDs are rendered into an integer target around the
+pointer and read back asynchronously (pixel-pack buffer + fence), so it never stalls a frame.
+
 ## Rendering and performance
 
 Workers propagate the catalog off the main thread: a pool of `cores − 1` workers (at most
