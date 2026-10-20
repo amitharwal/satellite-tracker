@@ -63,6 +63,11 @@ jobs:
           path: .cache/celestrak
           key: celestrak-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # Full-catalog comparison against the satellite.js test oracle. Writes a
+      # report to the job summary; fails on algorithm disagreement.
+      - name: Differential test vs satellite.js
+        run: npm run verify:diff
+
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v6

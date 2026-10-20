@@ -19,6 +19,7 @@ See [CLAUDE.md](CLAUDE.md) for architecture, constraints and the phase plan.
 | `npm test`             | Vitest, single run (`test:watch` for watch mode)           |
 | `npm run data:fetch`   | Fetch the catalog from CelesTrak into `public/data/`       |
 | `npm run data:offline` | Rebuild `public/data/` from the local cache, never fetches |
+| `npm run verify:diff`  | Full-catalog SGP4 comparison against satellite.js          |
 
 ## Catalog data
 
@@ -40,6 +41,24 @@ than 20% from the last good run.
 
 Generated data is never committed. Locally, run `npm run data:fetch` at most once per 2 hours.
 
+## Orbit propagation
+
+`src/orbit/` implements SGP4/SDP4 from scratch, ported from David Vallado's C++ reference
+for "Revisiting Spacetrack Report #3" (AIAA 2006-6753,
+<https://celestrak.org/publications/AIAA/2006-6753/>). Positions are converted from TEME to
+Earth-fixed coordinates with IAU-82 GMST; polar motion is ignored.
+
+Verification:
+
+- `npm test` runs all 33 Vallado verification cases in both opsmodes against the reference
+  output: every position is within 1 m (max observed 4.1 mm), and error codes match. Fixture
+  provenance: [test/fixtures/sgp4-verification/README.md](test/fixtures/sgp4-verification/README.md).
+- `npm run verify:diff` propagates the whole catalog in `public/data/` at six times with both
+  this implementation and [satellite.js](https://github.com/shashwatak/satellite-js), which is
+  used only as a dev-time test oracle. It reports max/p99/median differences and fails on
+  algorithm disagreement of 1 m or more. CI runs it on every deploy and writes the report to
+  the job summary.
+
 ## Deployment
 
 `.github/workflows/deploy.yml` runs on push to `main`, every 4 hours and on manual dispatch.
@@ -54,5 +73,7 @@ repository activity. Re-enable it from the Actions tab if the data stops updatin
 ## Attribution
 
 - Orbital data courtesy of [CelesTrak](https://celestrak.org) (Dr. T.S. Kelso).
+- SGP4 ported from David Vallado's reference implementation (Vallado, Crawford, Hujsak and
+  Kelso, AIAA 2006-6753), <https://celestrak.org/publications/AIAA/2006-6753/>.
 - Earth textures: NASA Earth Observatory (Blue Marble: Next Generation; Black Marble 2016).
   See [public/textures/CREDITS.md](public/textures/CREDITS.md).
