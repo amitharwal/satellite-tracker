@@ -1,17 +1,35 @@
 import { lookAt, perspective, type Mat4, type Vec3 } from './math.ts';
 
-/** Camera pose around the Earth's center, ECEF-aligned with +z (north) up. */
+/** Camera pose around the scene origin, with +z up (Earth's north, or ecliptic north). */
 export interface Orbit {
   /** Longitude of the eye, radians (unbounded while dragging; wrapped on flyTo). */
   azimuth: number;
   /** Latitude of the eye, radians. */
   elevation: number;
-  /** Distance from the Earth's center, Earth radii. */
+  /** Distance from the origin, scene units (Earth radii or au). */
   distance: number;
 }
 
+export interface CameraLimits {
+  /** Radius of the central body; altitude is measured from its surface. */
+  radius: number;
+  minAltitude: number;
+  maxAltitude: number;
+  /** How far beyond the origin the far plane reaches (scene units). */
+  farMargin: number;
+}
+
 export const MIN_ALTITUDE = 0.02; // ~130 km above the equatorial radius
-export const MAX_ALTITUDE = 60;
+/** Far enough out to see the Moon's orbit (~60 Earth radii). */
+export const MAX_ALTITUDE = 150;
+
+/** Earth view: Earth radii, room for the Moon behind the globe. */
+export const EARTH_LIMITS: CameraLimits = {
+  radius: 1,
+  minAltitude: MIN_ALTITUDE,
+  maxAltitude: MAX_ALTITUDE,
+  farMargin: 70,
+};
 const MAX_ELEVATION = Math.PI / 2 - 0.01;
 const FOV_Y = (45 * Math.PI) / 180;
 /** Time constant of the exponential smoothing, seconds. */
@@ -28,9 +46,14 @@ export class OrbitCamera {
   readonly fovY = FOV_Y;
   readonly current: Orbit;
   readonly target: Orbit;
+  readonly limits: CameraLimits;
 
-  constructor(initial: Orbit = { azimuth: 0, elevation: 0.35, distance: 3.5 }) {
-    const pose = { ...initial, distance: clampDistance(initial.distance) };
+  constructor(
+    initial: Orbit = { azimuth: 0, elevation: 0.35, distance: 3.5 },
+    limits: CameraLimits = EARTH_LIMITS,
+  ) {
+    this.limits = limits;
+    const pose = { ...initial, distance: this.clampDistance(initial.distance) };
     pose.elevation = clamp(pose.elevation, -MAX_ELEVATION, MAX_ELEVATION);
     this.current = { ...pose };
     this.target = { ...pose };
@@ -42,7 +65,7 @@ export class OrbitCamera {
    */
   rotate(dxPx: number, dyPx: number, viewportHeightPx: number): void {
     const radiansPerPx =
-      (this.fovY / viewportHeightPx) * clamp(this.target.distance - 1, 0.002, 1.5);
+      (this.fovY / viewportHeightPx) * clamp(this.target.distance - this.limits.radius, 0.002, 1.5);
     this.target.azimuth -= dxPx * radiansPerPx;
     this.target.elevation = clamp(
       this.target.elevation + dyPx * radiansPerPx,
@@ -53,7 +76,8 @@ export class OrbitCamera {
 
   /** Zooms by scaling altitude: factor < 1 moves closer. */
   zoom(factor: number): void {
-    this.target.distance = clampDistance(1 + (this.target.distance - 1) * factor);
+    const r = this.limits.radius;
+    this.target.distance = this.clampDistance(r + (this.target.distance - r) * factor);
   }
 
   /** Smoothly moves to a pose, taking the short way around in azimuth. */
@@ -65,7 +89,7 @@ export class OrbitCamera {
     if (pose.elevation !== undefined) {
       this.target.elevation = clamp(pose.elevation, -MAX_ELEVATION, MAX_ELEVATION);
     }
-    if (pose.distance !== undefined) this.target.distance = clampDistance(pose.distance);
+    if (pose.distance !== undefined) this.target.distance = this.clampDistance(pose.distance);
   }
 
   /** Advances smoothing. Returns true while still moving. */
@@ -76,8 +100,9 @@ export class OrbitCamera {
     c.azimuth += (t.azimuth - c.azimuth) * k;
     c.elevation += (t.elevation - c.elevation) * k;
     // Interpolate altitude geometrically so zoom feels uniform at all scales.
-    const altitude = (c.distance - 1) * Math.pow((t.distance - 1) / (c.distance - 1), k);
-    c.distance = 1 + altitude;
+    const r = this.limits.radius;
+    const altitude = (c.distance - r) * Math.pow((t.distance - r) / (c.distance - r), k);
+    c.distance = r + altitude;
 
     const moving =
       Math.abs(t.azimuth - c.azimuth) > 1e-6 ||
@@ -85,6 +110,11 @@ export class OrbitCamera {
       Math.abs(t.distance - c.distance) > 1e-6 * t.distance;
     if (!moving) Object.assign(c, t);
     return moving;
+  }
+
+  private clampDistance(distance: number): number {
+    const { radius, minAltitude, maxAltitude } = this.limits;
+    return radius + clamp(distance - radius, minAltitude, maxAltitude);
   }
 
   eye(): Vec3 {
@@ -107,9 +137,9 @@ export class OrbitCamera {
    * the globe fits the narrow dimension.
    */
   projectionMatrix(out: Mat4, aspect: number): Mat4 {
-    const altitude = this.current.distance - 1;
+    const altitude = this.current.distance - this.limits.radius;
     const near = clamp(altitude * 0.5, 0.001, 1);
-    const far = this.current.distance + 12; // beyond GEO (6.6 ER) on the far side
+    const far = this.current.distance + this.limits.farMargin;
     return perspective(out, effectiveFovY(this.fovY, aspect), aspect, near, far);
   }
 }
@@ -117,10 +147,6 @@ export class OrbitCamera {
 /** Vertical field of view that keeps `fov` across the narrower viewport axis. */
 export function effectiveFovY(fov: number, aspect: number): number {
   return aspect >= 1 ? fov : 2 * Math.atan(Math.tan(fov / 2) / aspect);
-}
-
-function clampDistance(distance: number): number {
-  return 1 + clamp(distance - 1, MIN_ALTITUDE, MAX_ALTITUDE);
 }
 
 /** Wraps an angle to (−π, π]. */

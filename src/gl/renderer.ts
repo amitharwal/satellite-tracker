@@ -3,8 +3,10 @@ import { sunDirectionEcef } from '@/orbit/sun';
 import { julianDateFromUnixMs } from '@/orbit/time';
 import type { SimClock } from '@/time/clock';
 import { createBuffer, createVertexArray } from './buffer.ts';
-import { OrbitCamera } from './camera.ts';
+import { OrbitCamera, type CameraLimits } from './camera.ts';
 import { attachOrbitControls } from './controls.ts';
+import { LabelOverlay } from './labels.ts';
+import { MarkerLayer, type Marker } from './markers.ts';
 import { createEllipsoidMesh } from './ellipsoid.ts';
 import { mat4, multiply, type Vec3 } from './math.ts';
 import { Picker, type PickPurpose, type PickRequest, type PickResult } from './picking.ts';
@@ -39,7 +41,20 @@ export interface RendererOptions {
   onUserRotate?: () => void;
   /** Asynchronous GPU pick results, a frame or two after requestPick. */
   onPick?: (result: PickResult) => void;
+  /** Element (over the canvas) that receives positioned scene labels. */
+  labelContainer?: HTMLElement;
 }
+
+export type ViewMode = 'earth' | 'solar';
+
+/** Extra scene content per view: polylines and labelled markers, given simulated time. */
+export interface Overlay {
+  polylines?: TrailSource;
+  markers?: (simMs: number) => readonly Marker[];
+}
+
+/** Solar view: au around the Sun, out past Neptune. */
+const SOLAR_LIMITS: CameraLimits = { radius: 0, minAltitude: 0.3, maxAltitude: 80, farMargin: 60 };
 
 export interface FrameSample {
   intervalMs: number;
@@ -82,6 +97,14 @@ interface GpuResources {
  */
 export class Renderer {
   readonly camera = new OrbitCamera();
+  readonly solarCamera = new OrbitCamera(
+    { azimuth: -1.2, elevation: 0.6, distance: 5 },
+    SOLAR_LIMITS,
+  );
+  private mode: ViewMode = 'earth';
+  private readonly overlays: Record<ViewMode, Overlay> = { earth: {}, solar: {} };
+  private markerLayer: MarkerLayer | null = null;
+  private readonly labels: LabelOverlay | null;
   private readonly canvas: HTMLCanvasElement;
   private readonly options: RendererOptions;
   private readonly gl: WebGL2RenderingContext | null;
@@ -95,7 +118,6 @@ export class Renderer {
   private highlight: Highlight = { selected: -1, hovered: -1 };
   private followTarget: (() => Vec3 | null) | null = null;
   private trailLayer: TrailLayer | null = null;
-  private trailSource: TrailSource | null = null;
   private satelliteT: number | null = null;
   private frameHandle = 0;
   private lastFrameMs: number | null = null;
@@ -125,7 +147,8 @@ export class Renderer {
     } catch {
       this.resizeObserver.observe(canvas);
     }
-    this.detachControls = attachOrbitControls(canvas, this.camera, {
+    this.labels = options.labelContainer ? new LabelOverlay(options.labelContainer) : null;
+    this.detachControls = attachOrbitControls(canvas, () => this.activeCamera, {
       onHover: (x, y) => options.onHover?.(x, y),
       onLeave: () => options.onLeave?.(),
       onTap: (x, y) => options.onTap?.(x, y),
@@ -190,13 +213,24 @@ export class Renderer {
     this.followTarget = target;
   }
 
-  /** Polylines drawn under the satellites each frame (orbit, ground track), or null. */
-  setTrailSource(source: TrailSource | null): void {
-    this.trailSource = source;
+  get activeCamera(): OrbitCamera {
+    return this.mode === 'solar' ? this.solarCamera : this.camera;
+  }
+
+  /** Switches between the Earth view and the heliocentric solar-system view. */
+  setMode(mode: ViewMode): void {
+    this.mode = mode;
+    this.pendingPicks.clear();
+  }
+
+  /** Polylines and markers drawn in a view each frame. */
+  setOverlay(mode: ViewMode, overlay: Overlay): void {
+    this.overlays[mode] = overlay;
   }
 
   /** Queues a pick at CSS px relative to the canvas; the result arrives via onPick. */
   requestPick(x: number, y: number, purpose: PickPurpose): void {
+    if (this.mode !== 'earth') return;
     const ratio = this.canvas.width / Math.max(1, this.canvas.clientWidth);
     this.pendingPicks.set(purpose, { purpose, x: x * ratio, y: y * ratio });
   }
@@ -263,6 +297,7 @@ export class Renderer {
       };
       this.picker = new Picker(gl);
       this.trailLayer = new TrailLayer(gl);
+      this.markerLayer = new MarkerLayer(gl);
       this.setStatus({ kind: 'running' });
       this.createSatelliteLayer();
       void this.loadTextures();
@@ -317,6 +352,9 @@ export class Renderer {
     this.picker = null;
     this.trailLayer?.dispose();
     this.trailLayer = null;
+    this.markerLayer?.dispose();
+    this.markerLayer = null;
+    this.labels?.clear();
   }
 
   private readonly onResize = (entries: ResizeObserverEntry[]) => {
@@ -355,6 +393,7 @@ export class Renderer {
     this.satelliteLayer = null; // recreated (empty) on restore; refilled by the next window
     this.picker = null;
     this.trailLayer = null;
+    this.markerLayer = null;
     this.setStatus({ kind: 'context-lost' });
   };
 
@@ -384,6 +423,10 @@ export class Renderer {
       this.pendingSize = null;
     }
     const { width, height } = this.canvas;
+    if (this.mode === 'solar') {
+      this.renderSolar(dt, width, height);
+      return;
+    }
 
     const target = this.followTarget?.();
     if (target) {
@@ -410,16 +453,7 @@ export class Renderer {
     gl.uniform1i(r.uniforms.uNight, 1);
     this.drawEarth(r);
 
-    const trails = this.trailSource?.(this.options.clock.now());
-    if (trails?.length && this.trailLayer) {
-      const pixelRatio = width / Math.max(1, this.canvas.clientWidth);
-      this.trailLayer.draw(
-        this.viewProj,
-        width,
-        height,
-        trails.map((t) => ({ ...t, style: { ...t.style, widthPx: t.style.widthPx * pixelRatio } })),
-      );
-    }
+    this.drawOverlay(this.overlays.earth, width, height, this.camera, 1);
 
     // Always tick so the schedule keeps advancing even while the layer is rebuilt.
     this.satelliteT = this.satelliteFeed?.tick() ?? null;
@@ -436,6 +470,51 @@ export class Renderer {
     }
 
     this.pick(r, width, height, sizePx);
+  }
+
+  /** Solar view: no Earth, satellites or picking; just the heliocentric overlay. */
+  private renderSolar(dt: number, width: number, height: number): void {
+    const gl = this.gl;
+    if (!gl) return;
+    this.solarCamera.update(dt);
+    this.solarCamera.viewMatrix(this.view);
+    this.solarCamera.projectionMatrix(this.proj, width / height);
+    multiply(this.viewProj, this.proj, this.view);
+    gl.viewport(0, 0, width, height);
+    gl.clearColor(...SPACE_COLOR);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    this.drawOverlay(this.overlays.solar, width, height, this.solarCamera, 0);
+  }
+
+  /** Draws a view's polylines and markers, and positions their labels. */
+  private drawOverlay(
+    overlay: Overlay,
+    width: number,
+    height: number,
+    camera: OrbitCamera,
+    occluderRadius: number,
+  ): void {
+    const simMs = this.options.clock.now();
+    const pixelRatio = width / Math.max(1, this.canvas.clientWidth);
+    const lines = overlay.polylines?.(simMs) ?? [];
+    if (lines.length && this.trailLayer) {
+      this.trailLayer.draw(
+        this.viewProj,
+        width,
+        height,
+        lines.map((l) => ({ ...l, style: { ...l.style, widthPx: l.style.widthPx * pixelRatio } })),
+      );
+    }
+    const markers = overlay.markers?.(simMs) ?? [];
+    this.markerLayer?.draw(this.viewProj, width, height, pixelRatio, markers);
+    this.labels?.update(
+      this.viewProj,
+      this.canvas.clientWidth,
+      this.canvas.clientHeight,
+      markers.flatMap((m) => (m.label ? [{ text: m.label, position: m.position }] : [])),
+      camera.eye(),
+      occluderRadius,
+    );
   }
 
   private satelliteSizePx(): number {

@@ -24,7 +24,7 @@ export interface ControlCallbacks {
  */
 export function attachOrbitControls(
   canvas: HTMLCanvasElement,
-  camera: OrbitCamera,
+  activeCamera: () => OrbitCamera,
   callbacks: ControlCallbacks = {},
 ): () => void {
   const pointers = new Map<number, { x: number; y: number }>();
@@ -69,11 +69,11 @@ export function attachOrbitControls(
     }
 
     if (pointers.size === 1 && press?.moved !== false) {
-      camera.rotate(dx, dy, canvas.clientHeight);
+      activeCamera().rotate(dx, dy, canvas.clientHeight);
       callbacks.onRotate?.();
     } else if (pointers.size === 2) {
       const span = pinchSpan();
-      if (pinchDistance > 0 && span > 0) camera.zoom(pinchDistance / span);
+      if (pinchDistance > 0 && span > 0) activeCamera().zoom(pinchDistance / span);
       pinchDistance = span;
     }
   };
@@ -102,7 +102,7 @@ export function attachOrbitControls(
     e.preventDefault();
     // Normalize line/page delta modes to pixels.
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
-    camera.zoom(Math.exp((e.deltaY * scale) / WHEEL_PIXELS_PER_E));
+    activeCamera().zoom(Math.exp((e.deltaY * scale) / WHEEL_PIXELS_PER_E));
   };
 
   canvas.addEventListener('pointerdown', onPointerDown);

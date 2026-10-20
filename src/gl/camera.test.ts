@@ -78,6 +78,33 @@ describe('OrbitCamera', () => {
   });
 });
 
+describe('OrbitCamera with custom limits (solar view)', () => {
+  it('zooms distance itself when the central radius is 0, within the limits', () => {
+    const camera = new OrbitCamera(
+      { azimuth: 0, elevation: 0, distance: 10 },
+      { radius: 0, minAltitude: 0.3, maxAltitude: 80, farMargin: 60 },
+    );
+    camera.zoom(0.5);
+    expect(camera.target.distance).toBeCloseTo(5, 12);
+    camera.zoom(1e-6);
+    expect(camera.target.distance).toBeCloseTo(0.3, 12);
+    camera.zoom(1e9);
+    expect(camera.target.distance).toBeCloseTo(80, 12);
+  });
+
+  it('puts the far plane beyond the outermost orbit (Neptune at ~30 au)', () => {
+    const camera = new OrbitCamera(
+      { azimuth: 0, elevation: 0, distance: 40 },
+      { radius: 0, minAltitude: 0.3, maxAltitude: 80, farMargin: 60 },
+    );
+    const proj = camera.projectionMatrix(mat4(), 1);
+    const view = camera.viewMatrix(mat4());
+    const [vx, vy, vz] = transformPoint(view, [-31, 0, 0]); // far side of Neptune's orbit
+    const [, , cz, cw] = transformPoint(proj, [vx, vy, vz]);
+    expect(Math.abs(cz / cw)).toBeLessThan(1);
+  });
+});
+
 describe('effectiveFovY', () => {
   it('keeps the vertical fov in landscape and the horizontal fov in portrait', () => {
     const fov = Math.PI / 4;
