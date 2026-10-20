@@ -2,13 +2,21 @@ import { Pause, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { RATE_PRESETS, viewMode } from '@/app/view';
 import { clock } from '@/state';
 import { useStore } from '@/ui/useStore';
 
-const RATES = [-600, -60, 1, 10, 60, 600, 3600];
+const PER_SECOND: [number, string][] = [
+  [2_592_000, '30 d/s'],
+  [604_800, '1 wk/s'],
+  [86_400, '1 d/s'],
+  [3600, '1 h/s'],
+];
 
-function formatRate(rate: number): string {
-  return `${rate < 0 ? '−' : ''}${Math.abs(rate).toLocaleString()}×`;
+function formatRate(rate: number, solar: boolean): string {
+  const sign = rate < 0 ? '−' : '';
+  const named = solar ? PER_SECOND.find(([v]) => v === Math.abs(rate)) : undefined;
+  return named ? `${sign}${named[1]}` : `${sign}${Math.abs(rate).toLocaleString()}×`;
 }
 
 function formatUtc(ms: number): string {
@@ -31,6 +39,7 @@ function useSimTime(): { sim: number; wall: number } {
 
 export function TimeControls() {
   const state = useStore(clock.store);
+  const mode = useStore(viewMode);
   const now = useSimTime();
   const offsetS = Math.round((now.sim - now.wall) / 1000);
 
@@ -68,9 +77,9 @@ export function TimeControls() {
           }}
           aria-label="Time rate"
         >
-          {RATES.map((rate) => (
+          {RATE_PRESETS[mode].map((rate) => (
             <ToggleGroupItem key={rate} value={String(rate)} className="px-2 tabular-nums">
-              {formatRate(rate)}
+              {formatRate(rate, mode === 'solar')}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>

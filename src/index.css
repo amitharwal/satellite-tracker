@@ -126,6 +126,12 @@
   html {
     @apply font-sans;
   }
+  /* Labels positioned by the renderer via transform (see src/gl/labels.ts). */
+  .scene-label {
+    @apply absolute top-0 left-0 ml-2 -mt-2 text-[11px] whitespace-nowrap text-neutral-200;
+    text-shadow: 0 0 3px black;
+    will-change: transform;
+  }
   /* Full-viewport app shell; the canvas must never size the layout. */
   html,
   body,

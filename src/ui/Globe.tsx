@@ -31,6 +31,7 @@ function createWorker(): WorkerLike {
 /** Mounts the imperative renderer and the propagation pipeline. React never drives frames. */
 export function Globe() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const labelsRef = useRef<HTMLDivElement>(null);
   const hovering = useStore(selection, (s) => s.hovered !== null);
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export function Globe() {
     let renderer: Renderer | null = null;
     renderer = new Renderer(canvas, {
       clock,
+      ...(labelsRef.current && { labelContainer: labelsRef.current }),
       status: rendererStatus,
       textures: TEXTURES,
       onFrame: (sample) => {
@@ -76,13 +78,21 @@ export function Globe() {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={cn(
-        'block size-full touch-none select-none',
-        hovering ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
-      )}
-      aria-label="3D globe. Drag to rotate, scroll to zoom, click a satellite to select it."
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className={cn(
+          'block size-full touch-none select-none',
+          hovering ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
+        )}
+        aria-label="3D globe. Drag to rotate, scroll to zoom, click a satellite to select it."
+      />
+      {/* Scene labels (Moon, planets), positioned imperatively by the renderer. */}
+      <div
+        ref={labelsRef}
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+        aria-hidden
+      />
+    </>
   );
 }

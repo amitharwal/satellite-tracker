@@ -3,6 +3,8 @@ import type { Renderer, RendererOptions } from '../gl/renderer.ts';
 import { EARTH_RADIUS_KM } from '../orbit/frames.ts';
 import { SingleSatellite } from '../orbit/details.ts';
 import { OrbitTrail } from '../orbit/trail.ts';
+import { moonOverlay, solarOverlay } from './scenes.ts';
+import { viewMode } from './view.ts';
 import { catalogIndex, clock, filter, selection } from '../state.ts';
 
 let cached: { index: number; satellite: SingleSatellite } | null = null;
@@ -87,23 +89,29 @@ export function connectInteraction(renderer: Renderer): () => void {
   activeRenderer = renderer;
 
   let trailFor: number | null = null;
+  let trail: OrbitTrail | null = null;
   const applyTrail = (index: number | null) => {
     if (index === trailFor) return;
     trailFor = index;
     const satellite = index === null ? null : satelliteAt(index);
-    if (satellite?.initError !== 0) {
-      renderer.setTrailSource(null);
-      return;
-    }
-    const trail = new OrbitTrail(satellite);
-    renderer.setTrailSource((simMs) => {
+    trail = satellite?.initError === 0 ? new OrbitTrail(satellite) : null;
+  };
+
+  const moon = moonOverlay();
+  renderer.setOverlay('earth', {
+    markers: moon.markers,
+    polylines: (simMs) => {
+      const lines = moon.polylines(simMs);
+      if (!trail) return lines;
       const g = trail.update(simMs);
       return [
+        ...lines,
         { polyline: { vertices: g.track, count: g.trackCount }, style: TRACK_STYLE },
         { polyline: { vertices: g.orbit, count: g.orbitCount }, style: ORBIT_STYLE },
       ];
-    });
-  };
+    },
+  });
+  renderer.setOverlay('solar', solarOverlay());
 
   const applySelection = () => {
     const s = selection.get();
@@ -129,6 +137,9 @@ export function connectInteraction(renderer: Renderer): () => void {
   };
 
   const unsubscribe = [
+    viewMode.subscribe(() => {
+      renderer.setMode(viewMode.get());
+    }),
     selection.subscribe(applySelection),
     filter.subscribe(applyFilter),
     catalogIndex.subscribe(() => {
@@ -138,6 +149,7 @@ export function connectInteraction(renderer: Renderer): () => void {
       applyFilter();
     }),
   ];
+  renderer.setMode(viewMode.get());
   applySelection();
   applyFilter();
 
