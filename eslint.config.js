@@ -40,9 +40,12 @@ export default defineConfig([
     },
   },
   {
-    // shadcn/ui primitives are vendored and co-export variant helpers by design.
+    // shadcn/ui primitives are vendored: keep them as generated.
     files: ['src/components/ui/**/*.tsx'],
-    rules: { 'react-refresh/only-export-components': 'off' },
+    rules: {
+      'react-refresh/only-export-components': 'off',
+      '@typescript-eslint/prefer-nullish-coalescing': 'off',
+    },
   },
   {
     files: ['**/*.js'],

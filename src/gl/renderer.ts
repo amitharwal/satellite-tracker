@@ -6,8 +6,9 @@ import { createBuffer, createVertexArray } from './buffer.ts';
 import { OrbitCamera } from './camera.ts';
 import { attachOrbitControls } from './controls.ts';
 import { createEllipsoidMesh } from './ellipsoid.ts';
-import { mat4, multiply } from './math.ts';
-import { SatelliteLayer, type PositionSlice } from './satellites.ts';
+import { mat4, multiply, type Vec3 } from './math.ts';
+import { Picker, type PickPurpose, type PickRequest, type PickResult } from './picking.ts';
+import { SatelliteLayer, type Highlight, type PositionSlice } from './satellites.ts';
 import { createProgram, getUniforms } from './shader.ts';
 import earthFragSource from './shaders/earth.frag.glsl?raw';
 import earthVertSource from './shaders/earth.vert.glsl?raw';
@@ -29,6 +30,14 @@ export interface RendererOptions {
   satelliteSizePx?: number;
   /** Called after every frame with the rAF interval and the CPU time spent rendering. */
   onFrame?: (sample: FrameSample) => void;
+  /** Pointer interaction on the canvas (CSS px relative to the canvas). */
+  onHover?: (x: number, y: number) => void;
+  onLeave?: () => void;
+  onTap?: (x: number, y: number) => void;
+  /** The user dragged the camera (used to cancel follow mode). */
+  onUserRotate?: () => void;
+  /** Asynchronous GPU pick results, a frame or two after requestPick. */
+  onPick?: (result: PickResult) => void;
 }
 
 export interface FrameSample {
@@ -73,6 +82,13 @@ export class Renderer {
   private resources: GpuResources | null = null;
   private satelliteFeed: SatelliteFeed | null = null;
   private satelliteLayer: SatelliteLayer | null = null;
+  private picker: Picker | null = null;
+  /** Latest request per purpose; a newer hover replaces an older one, clicks are never dropped behind hovers. */
+  private readonly pendingPicks = new Map<PickPurpose, PickRequest>();
+  private visibility: Uint8Array | null = null;
+  private highlight: Highlight = { selected: -1, hovered: -1 };
+  private followTarget: (() => Vec3 | null) | null = null;
+  private satelliteT: number | null = null;
   private frameHandle = 0;
   private lastFrameMs: number | null = null;
   private pendingSize: { width: number; height: number } | null = null;
@@ -101,7 +117,12 @@ export class Renderer {
     } catch {
       this.resizeObserver.observe(canvas);
     }
-    this.detachControls = attachOrbitControls(canvas, this.camera);
+    this.detachControls = attachOrbitControls(canvas, this.camera, {
+      onHover: (x, y) => options.onHover?.(x, y),
+      onLeave: () => options.onLeave?.(),
+      onTap: (x, y) => options.onTap?.(x, y),
+      onRotate: () => options.onUserRotate?.(),
+    });
     canvas.addEventListener('webglcontextlost', this.onContextLost);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored);
 
@@ -146,6 +167,27 @@ export class Renderer {
     this.createSatelliteLayer();
   }
 
+  /** One byte per satellite: 1 shown, 0 filtered out. Persists across context restores. */
+  setSatelliteVisibility(mask: Uint8Array): void {
+    this.visibility = mask;
+    this.satelliteLayer?.setVisibility(mask);
+  }
+
+  setSatelliteHighlight(highlight: Highlight): void {
+    this.highlight = highlight;
+  }
+
+  /** Keeps the camera pointed at a moving ECEF position (Earth radii), or stops with null. */
+  setFollowTarget(target: (() => Vec3 | null) | null): void {
+    this.followTarget = target;
+  }
+
+  /** Queues a pick at CSS px relative to the canvas; the result arrives via onPick. */
+  requestPick(x: number, y: number, purpose: PickPurpose): void {
+    const ratio = this.canvas.width / Math.max(1, this.canvas.clientWidth);
+    this.pendingPicks.set(purpose, { purpose, x: x * ratio, y: y * ratio });
+  }
+
   uploadSatellites(slices: readonly PositionSlice[]): void {
     this.satelliteLayer?.uploadBack(slices);
   }
@@ -160,6 +202,7 @@ export class Renderer {
     if (!gl || !feed || gl.isContextLost() || this.satelliteLayer) return;
     try {
       this.satelliteLayer = new SatelliteLayer(gl, feed.count, feed.regimes);
+      if (this.visibility) this.satelliteLayer.setVisibility(this.visibility);
     } catch (error) {
       this.setStatus({
         kind: 'error',
@@ -205,6 +248,7 @@ export class Renderer {
         dayTexture: createPlaceholderTexture(gl, [16, 42, 84, 255]),
         nightTexture: createPlaceholderTexture(gl, [0, 0, 0, 255]),
       };
+      this.picker = new Picker(gl);
       this.setStatus({ kind: 'running' });
       this.createSatelliteLayer();
       void this.loadTextures();
@@ -255,6 +299,8 @@ export class Renderer {
     gl.deleteTexture(r.nightTexture);
     this.satelliteLayer?.dispose();
     this.satelliteLayer = null;
+    this.picker?.dispose();
+    this.picker = null;
   }
 
   private readonly onResize = (entries: ResizeObserverEntry[]) => {
@@ -291,6 +337,7 @@ export class Renderer {
     this.textureLoad.abort();
     this.resources = null; // GPU objects are already gone
     this.satelliteLayer = null; // recreated (empty) on restore; refilled by the next window
+    this.picker = null;
     this.setStatus({ kind: 'context-lost' });
   };
 
@@ -321,6 +368,11 @@ export class Renderer {
     }
     const { width, height } = this.canvas;
 
+    const target = this.followTarget?.();
+    if (target) {
+      const [x, y, z] = target;
+      this.camera.flyTo({ azimuth: Math.atan2(y, x), elevation: Math.atan2(z, Math.hypot(x, y)) });
+    }
     this.camera.update(dt);
     this.camera.viewMatrix(this.view);
     this.camera.projectionMatrix(this.proj, width / height);
@@ -331,12 +383,7 @@ export class Renderer {
     gl.viewport(0, 0, width, height);
     gl.clearColor(...SPACE_COLOR);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
-    gl.cullFace(gl.BACK);
-
     gl.useProgram(r.program);
-    gl.uniformMatrix4fv(r.uniforms.uViewProj, false, this.viewProj);
     gl.uniform3f(r.uniforms.uSunDir, sun[0], sun[1], sun[2]);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, r.dayTexture);
@@ -344,17 +391,68 @@ export class Renderer {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, r.nightTexture);
     gl.uniform1i(r.uniforms.uNight, 1);
+    this.drawEarth(r);
 
+    // Always tick so the schedule keeps advancing even while the layer is rebuilt.
+    this.satelliteT = this.satelliteFeed?.tick() ?? null;
+    const sizePx = this.satelliteSizePx();
+    if (this.satelliteT !== null && this.satelliteLayer) {
+      this.satelliteLayer.draw(
+        this.viewProj,
+        this.satelliteT,
+        width,
+        height,
+        sizePx,
+        this.highlight,
+      );
+    }
+
+    this.pick(r, width, height, sizePx);
+  }
+
+  private satelliteSizePx(): number {
+    const pixelRatio = this.canvas.width / Math.max(1, this.canvas.clientWidth);
+    return (this.options.satelliteSizePx ?? 3) * pixelRatio;
+  }
+
+  /** Draws the Earth with the current program state (colour or depth-only target). */
+  private drawEarth(r: GpuResources): void {
+    const gl = this.gl;
+    if (!gl) return;
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.BACK);
+    gl.useProgram(r.program);
+    gl.uniformMatrix4fv(r.uniforms.uViewProj, false, this.viewProj);
     gl.bindVertexArray(r.vao);
     gl.drawElements(gl.TRIANGLES, r.indexCount, r.indexType, 0);
     gl.bindVertexArray(null);
+  }
 
-    // Always tick so the schedule keeps advancing even while the layer is rebuilt.
-    const t = this.satelliteFeed?.tick() ?? null;
-    if (t !== null && this.satelliteLayer) {
-      const pixelRatio = width / Math.max(1, this.canvas.clientWidth);
-      const sizePx = (this.options.satelliteSizePx ?? 3) * pixelRatio;
-      this.satelliteLayer.draw(this.viewProj, t, width, height, sizePx);
+  /** Delivers a finished pick, then starts the next queued one (one in flight at a time). */
+  private pick(r: GpuResources, width: number, height: number, sizePx: number): void {
+    const gl = this.gl;
+    const picker = this.picker;
+    const layer = this.satelliteLayer;
+    if (!gl || !picker) return;
+
+    const result = picker.poll();
+    if (result) this.options.onPick?.(result);
+    if (picker.busy || this.pendingPicks.size === 0) return;
+
+    const request = this.pendingPicks.get('click') ?? this.pendingPicks.get('hover');
+    if (!request) return;
+    this.pendingPicks.delete(request.purpose);
+    picker.begin(request, width, height);
+    // Earth depth only (no colour target), so satellites behind it can't be picked.
+    gl.drawBuffers([gl.NONE]);
+    this.drawEarth(r);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    if (this.satelliteT !== null && layer) {
+      layer.drawIds(this.viewProj, this.satelliteT, width, height, sizePx, this.highlight);
     }
+    picker.end();
+    gl.viewport(0, 0, width, height);
   }
 }
