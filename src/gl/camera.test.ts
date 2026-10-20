@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ALTITUDE, MIN_ALTITUDE, OrbitCamera, wrapAngle } from './camera.ts';
+import { effectiveFovY, MAX_ALTITUDE, MIN_ALTITUDE, OrbitCamera, wrapAngle } from './camera.ts';
 import { mat4, transformPoint } from './math.ts';
 
 /** Runs the camera at 60 fps for the given duration. */
@@ -75,6 +75,16 @@ describe('OrbitCamera', () => {
     const [vx, vy, vz] = transformPoint(view, [1, 0, 0]);
     const [, , cz, cw] = transformPoint(proj, [vx, vy, vz]);
     expect(Math.abs(cz / cw)).toBeLessThan(1);
+  });
+});
+
+describe('effectiveFovY', () => {
+  it('keeps the vertical fov in landscape and the horizontal fov in portrait', () => {
+    const fov = Math.PI / 4;
+    expect(effectiveFovY(fov, 1.5)).toBe(fov);
+    const portrait = effectiveFovY(fov, 0.5);
+    // Horizontal fov = 2·atan(aspect · tan(fovY / 2)) must equal the configured fov.
+    expect(2 * Math.atan(0.5 * Math.tan(portrait / 2))).toBeCloseTo(fov, 12);
   });
 });
 

@@ -101,13 +101,22 @@ export class OrbitCamera {
     return lookAt(out, this.eye(), [0, 0, 0], [0, 0, 1]);
   }
 
-  /** Near/far planes adapt to altitude to keep depth precision usable. */
+  /**
+   * Near/far planes adapt to altitude to keep depth precision usable. In
+   * portrait viewports the field of view is held horizontally instead, so
+   * the globe fits the narrow dimension.
+   */
   projectionMatrix(out: Mat4, aspect: number): Mat4 {
     const altitude = this.current.distance - 1;
     const near = clamp(altitude * 0.5, 0.001, 1);
     const far = this.current.distance + 12; // beyond GEO (6.6 ER) on the far side
-    return perspective(out, this.fovY, aspect, near, far);
+    return perspective(out, effectiveFovY(this.fovY, aspect), aspect, near, far);
   }
+}
+
+/** Vertical field of view that keeps `fov` across the narrower viewport axis. */
+export function effectiveFovY(fov: number, aspect: number): number {
+  return aspect >= 1 ? fov : 2 * Math.atan(Math.tan(fov / 2) / aspect);
 }
 
 function clampDistance(distance: number): number {

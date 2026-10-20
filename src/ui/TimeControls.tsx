@@ -35,7 +35,7 @@ export function TimeControls() {
   const offsetS = Math.round((now.sim - now.wall) / 1000);
 
   return (
-    <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-lg bg-black/70 px-3 py-2 text-neutral-100 backdrop-blur">
+    <div className="absolute inset-x-4 bottom-4 mx-auto flex w-fit flex-col items-center gap-2 rounded-lg bg-black/70 px-3 py-2 text-neutral-100 backdrop-blur">
       <div className="font-mono text-sm tabular-nums" aria-live="off">
         {formatUtc(now.sim)}
         {Math.abs(offsetS) >= 2 && (
@@ -61,6 +61,7 @@ export function TimeControls() {
           type="single"
           variant="outline"
           size="sm"
+          className="flex-wrap justify-center"
           value={String(state.rate)}
           onValueChange={(value) => {
             if (value) clock.setRate(Number(value));

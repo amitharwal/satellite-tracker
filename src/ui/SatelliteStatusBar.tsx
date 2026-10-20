@@ -12,7 +12,8 @@ const REGIMES = [
 export function SatelliteStatusBar() {
   const status = useStore(satelliteStatus);
   return (
-    <footer className="pointer-events-none absolute bottom-4 left-4 space-y-1 text-xs text-neutral-300">
+    // Hidden on phones, where the time controls need the bottom edge.
+    <footer className="pointer-events-none absolute bottom-4 left-4 hidden space-y-1 text-xs text-neutral-300 sm:block">
       <ul className="flex flex-wrap gap-x-3 gap-y-1" aria-label="Orbit regime colours">
         {REGIMES.map((r) => (
           <li key={r.label} className="flex items-center gap-1.5">
