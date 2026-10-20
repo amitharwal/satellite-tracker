@@ -44,6 +44,8 @@ export function attachOrbitControls(
   const onPointerDown = (e: PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     canvas.setPointerCapture(e.pointerId);
+    // Hovering ends when a press starts; it resumes on the next free move.
+    if (pointers.size === 0) callbacks.onLeave?.();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     press =
       pointers.size === 1 ? { x: e.clientX, y: e.clientY, time: e.timeStamp, moved: false } : null;

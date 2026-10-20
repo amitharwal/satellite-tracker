@@ -2,6 +2,7 @@ import { visibilityMask } from '../data/search.ts';
 import type { Renderer, RendererOptions } from '../gl/renderer.ts';
 import { EARTH_RADIUS_KM } from '../orbit/frames.ts';
 import { SingleSatellite } from '../orbit/details.ts';
+import { OrbitTrail } from '../orbit/trail.ts';
 import { catalogIndex, clock, filter, selection } from '../state.ts';
 
 let cached: { index: number; satellite: SingleSatellite } | null = null;
@@ -30,6 +31,9 @@ export function satelliteAt(index: number): SingleSatellite | null {
 }
 
 let activeRenderer: Renderer | null = null;
+
+const ORBIT_STYLE = { color: [1, 1, 1, 0.75], pastAlpha: 0.3, widthPx: 1.5 } as const;
+const TRACK_STYLE = { color: [0.99, 0.83, 0.3, 0.9], pastAlpha: 0.35, widthPx: 1.5 } as const;
 
 /** Smoothly moves the camera above a satellite, far enough out to see it. */
 export function flyTo(index: number): void {
@@ -82,8 +86,28 @@ export function interactionCallbacks(
 export function connectInteraction(renderer: Renderer): () => void {
   activeRenderer = renderer;
 
+  let trailFor: number | null = null;
+  const applyTrail = (index: number | null) => {
+    if (index === trailFor) return;
+    trailFor = index;
+    const satellite = index === null ? null : satelliteAt(index);
+    if (satellite?.initError !== 0) {
+      renderer.setTrailSource(null);
+      return;
+    }
+    const trail = new OrbitTrail(satellite);
+    renderer.setTrailSource((simMs) => {
+      const g = trail.update(simMs);
+      return [
+        { polyline: { vertices: g.track, count: g.trackCount }, style: TRACK_STYLE },
+        { polyline: { vertices: g.orbit, count: g.orbitCount }, style: ORBIT_STYLE },
+      ];
+    });
+  };
+
   const applySelection = () => {
     const s = selection.get();
+    applyTrail(s.selected);
     renderer.setSatelliteHighlight({ selected: s.selected ?? -1, hovered: s.hovered ?? -1 });
     const index = s.selected;
     renderer.setFollowTarget(
@@ -109,6 +133,7 @@ export function connectInteraction(renderer: Renderer): () => void {
     filter.subscribe(applyFilter),
     catalogIndex.subscribe(() => {
       cached = null;
+      trailFor = null;
       selection.set((s) => ({ ...s, selected: null, hovered: null, follow: false }));
       applyFilter();
     }),

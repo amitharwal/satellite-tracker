@@ -10,6 +10,7 @@ import { mat4, multiply, type Vec3 } from './math.ts';
 import { Picker, type PickPurpose, type PickRequest, type PickResult } from './picking.ts';
 import { SatelliteLayer, type Highlight, type PositionSlice } from './satellites.ts';
 import { createProgram, getUniforms } from './shader.ts';
+import { TrailLayer, type Polyline, type PolylineStyle } from './trails.ts';
 import earthFragSource from './shaders/earth.frag.glsl?raw';
 import earthVertSource from './shaders/earth.vert.glsl?raw';
 import { createImageTexture, createPlaceholderTexture, loadImageBitmap } from './texture.ts';
@@ -44,6 +45,11 @@ export interface FrameSample {
   intervalMs: number;
   cpuMs: number;
 }
+
+/** Polylines (in Earth radii) to draw this frame, given simulated time. */
+export type TrailSource = (
+  simMs: number,
+) => readonly { polyline: Polyline; style: PolylineStyle }[];
 
 /** What the renderer needs from the propagation side. */
 export interface SatelliteFeed {
@@ -88,6 +94,8 @@ export class Renderer {
   private visibility: Uint8Array | null = null;
   private highlight: Highlight = { selected: -1, hovered: -1 };
   private followTarget: (() => Vec3 | null) | null = null;
+  private trailLayer: TrailLayer | null = null;
+  private trailSource: TrailSource | null = null;
   private satelliteT: number | null = null;
   private frameHandle = 0;
   private lastFrameMs: number | null = null;
@@ -182,6 +190,11 @@ export class Renderer {
     this.followTarget = target;
   }
 
+  /** Polylines drawn under the satellites each frame (orbit, ground track), or null. */
+  setTrailSource(source: TrailSource | null): void {
+    this.trailSource = source;
+  }
+
   /** Queues a pick at CSS px relative to the canvas; the result arrives via onPick. */
   requestPick(x: number, y: number, purpose: PickPurpose): void {
     const ratio = this.canvas.width / Math.max(1, this.canvas.clientWidth);
@@ -249,6 +262,7 @@ export class Renderer {
         nightTexture: createPlaceholderTexture(gl, [0, 0, 0, 255]),
       };
       this.picker = new Picker(gl);
+      this.trailLayer = new TrailLayer(gl);
       this.setStatus({ kind: 'running' });
       this.createSatelliteLayer();
       void this.loadTextures();
@@ -301,6 +315,8 @@ export class Renderer {
     this.satelliteLayer = null;
     this.picker?.dispose();
     this.picker = null;
+    this.trailLayer?.dispose();
+    this.trailLayer = null;
   }
 
   private readonly onResize = (entries: ResizeObserverEntry[]) => {
@@ -338,6 +354,7 @@ export class Renderer {
     this.resources = null; // GPU objects are already gone
     this.satelliteLayer = null; // recreated (empty) on restore; refilled by the next window
     this.picker = null;
+    this.trailLayer = null;
     this.setStatus({ kind: 'context-lost' });
   };
 
@@ -392,6 +409,17 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, r.nightTexture);
     gl.uniform1i(r.uniforms.uNight, 1);
     this.drawEarth(r);
+
+    const trails = this.trailSource?.(this.options.clock.now());
+    if (trails?.length && this.trailLayer) {
+      const pixelRatio = width / Math.max(1, this.canvas.clientWidth);
+      this.trailLayer.draw(
+        this.viewProj,
+        width,
+        height,
+        trails.map((t) => ({ ...t, style: { ...t.style, widthPx: t.style.widthPx * pixelRatio } })),
+      );
+    }
 
     // Always tick so the schedule keeps advancing even while the layer is rebuilt.
     this.satelliteT = this.satelliteFeed?.tick() ?? null;
