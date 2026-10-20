@@ -50,8 +50,9 @@ export interface SchedulerStats {
   batches: number;
   /** Frames where the front window had expired and no replacement was ready. */
   lateFrames: number;
-  lastWorkerMs: number;
-  lastRoundTripMs: number;
+  /** Cumulative worker and round-trip time over all batches (for period means). */
+  totalWorkerMs: number;
+  totalRoundTripMs: number;
   targetHz: number;
   failed: number;
   errors: number;
@@ -72,8 +73,8 @@ export class PropagationScheduler {
   readonly stats: SchedulerStats = {
     batches: 0,
     lateFrames: 0,
-    lastWorkerMs: 0,
-    lastRoundTripMs: 0,
+    totalWorkerMs: 0,
+    totalRoundTripMs: 0,
     targetHz: 0,
     failed: 0,
     errors: 0,
@@ -172,8 +173,8 @@ export class PropagationScheduler {
         this.source.release(batch);
         this.back = { t0Ms, t1Ms, immediate };
         this.stats.batches++;
-        this.stats.lastWorkerMs = batch.workerMs;
-        this.stats.lastRoundTripMs = this.now() - sent;
+        this.stats.totalWorkerMs += batch.workerMs;
+        this.stats.totalRoundTripMs += this.now() - sent;
         this.stats.failed = batch.failed;
       },
       (error: unknown) => {
