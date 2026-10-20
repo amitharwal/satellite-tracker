@@ -29,6 +29,17 @@ export default defineConfig([
     extends: [reactHooks.configs.flat['recommended-latest'], reactRefresh.configs.vite],
   },
   {
+    // satellite.js is a test oracle only; it must never ship in the app bundle.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: [{ name: 'satellite.js', message: 'satellite.js is a test oracle only.' }] },
+      ],
+    },
+  },
+  {
     // shadcn/ui primitives are vendored and co-export variant helpers by design.
     files: ['src/components/ui/**/*.tsx'],
     rules: { 'react-refresh/only-export-components': 'off' },
