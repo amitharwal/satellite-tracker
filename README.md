@@ -59,6 +59,26 @@ Verification:
   algorithm disagreement of 1 m or more. CI runs it on every deploy and writes the report to
   the job summary.
 
+## Rendering and performance
+
+Workers propagate the catalog off the main thread: a pool of `cores − 1` workers (at most
+8), each owning a contiguous slice. They return ECEF positions at the start and end of a
+short window as transferred `Float32Array`s (no copies, no SharedArrayBuffer), and the GPU
+interpolates linearly between them every frame. While one window is drawn, the next is
+computed and uploaded to a second set of buffers. The update rate is 10 Hz at real time and
+rises (up to 60 Hz) at high time multipliers so a window never spans more than 10 s of
+simulated time. Satellites whose propagation fails are hidden and counted, never thrown.
+
+Press <kbd>`</kbd> (backquote) for the performance overlay. URL parameters for tuning:
+
+| Parameter    | Effect                                   |
+| ------------ | ---------------------------------------- |
+| `?stats`     | Show the performance overlay at startup  |
+| `?workers=N` | Override the worker count                |
+| `?hz=N`      | Base propagation rate, 1–60 (default 10) |
+
+`npm run bench:propagation` times one full-catalog batch on a single thread.
+
 ## Deployment
 
 `.github/workflows/deploy.yml` runs on push to `main`, every 4 hours and on manual dispatch.
