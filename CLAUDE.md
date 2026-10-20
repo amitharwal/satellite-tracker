@@ -21,7 +21,7 @@ Static, browser-based 3D tracker for the active satellite catalog, deployed to G
 - Vite + React 18+ (functional components, hooks), TypeScript strict mode, ES modules.
 - Tailwind v4 and shadcn/ui for the UI chrome only.
 - Vitest for tests. ESLint + Prettier: 2-space indent, semicolons.
-- Node 20+, npm.
+- Node 24 LTS (pinned in `.nvmrc`), npm.
 
 ## Architecture
 - Data pipeline (GitHub Actions, scheduled every few hours plus on push to main):

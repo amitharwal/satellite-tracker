@@ -1,0 +1,18 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Generated catalog data (never committed)
+public/data/
+.cache/
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
