@@ -8,7 +8,7 @@ export function StatsHud() {
   const snap = useStore(perfMonitor.store);
   const p = snap?.propagation;
   return (
-    <div className="pointer-events-none absolute top-4 right-4 rounded-md bg-black/70 px-3 py-2 font-mono text-xs leading-5 text-neutral-200 tabular-nums">
+    <div className="pointer-events-none rounded-md bg-black/70 px-3 py-2 font-mono text-xs leading-5 text-neutral-200 tabular-nums">
       {snap ? (
         <>
           <div>

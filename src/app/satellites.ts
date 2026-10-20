@@ -1,4 +1,5 @@
 import { loadCatalog } from '../data/catalog.ts';
+import { assignGroups } from '../data/groups.ts';
 import type { CatalogFile } from '../data/schema.ts';
 import type { Renderer } from '../gl/renderer.ts';
 import type { Store } from '../lib/store.ts';
@@ -13,11 +14,21 @@ export type SatelliteStatus =
   | { kind: 'ready'; count: number; workers: number; generatedAt: string }
   | { kind: 'error'; message: string };
 
+/** The catalog with per-satellite data derived once at load. */
+export interface CatalogIndex {
+  catalog: CatalogFile;
+  regimes: Uint8Array;
+  /** Index into GROUPS, or -1. */
+  groups: Int8Array;
+}
+
 export interface StartSatellitesOptions {
   renderer: Renderer;
   clock: SimClock;
   perf: PerfMonitor;
   status: Store<SatelliteStatus>;
+  /** Receives the catalog and derived data once loaded (null on teardown). */
+  index: Store<CatalogIndex | null>;
   dataUrl: string;
   workerCount: number;
   baseHz: number;
@@ -49,6 +60,7 @@ export async function startSatellites(options: StartSatellitesOptions): Promise<
     pool?.dispose();
     renderer.setSatellites(null);
     perf.setSource(null);
+    options.index.set(null);
   };
 
   try {
@@ -76,9 +88,16 @@ export async function startSatellites(options: StartSatellitesOptions): Promise<
     );
     scheduler = activeScheduler;
 
+    const regimes = regimesFor(catalog);
+    const { objectName, meanMotion, inclination } = catalog.columns;
+    options.index.set({
+      catalog,
+      regimes,
+      groups: assignGroups(objectName, meanMotion, inclination),
+    });
     renderer.setSatellites({
       count: catalog.count,
-      regimes: regimesFor(catalog),
+      regimes,
       tick: () => activeScheduler.tick(),
     });
     perf.setSource(() => ({
