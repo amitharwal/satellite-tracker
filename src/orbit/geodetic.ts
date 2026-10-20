@@ -33,3 +33,20 @@ export function ecefToGeodetic(x: number, y: number, z: number): Geodetic {
   const height = p * cosLat + z * sinLat - (a * a) / n;
   return { latitude, longitude, height };
 }
+
+/** WGS84 geodetic (rad, km) → ECEF (km). Writes into `out` at `offset`. */
+export function geodeticToEcef(
+  latitude: number,
+  longitude: number,
+  height: number,
+  out: Float32Array | Float64Array | number[],
+  offset = 0,
+  scale = 1,
+): void {
+  const sinLat = Math.sin(latitude);
+  const cosLat = Math.cos(latitude);
+  const n = EARTH_RADIUS_KM / Math.sqrt(1 - E2 * sinLat * sinLat);
+  out[offset] = (n + height) * cosLat * Math.cos(longitude) * scale;
+  out[offset + 1] = (n + height) * cosLat * Math.sin(longitude) * scale;
+  out[offset + 2] = (n * (1 - E2) + height) * sinLat * scale;
+}

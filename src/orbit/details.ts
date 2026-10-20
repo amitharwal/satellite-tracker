@@ -52,6 +52,14 @@ export class SingleSatellite {
     };
   }
 
+  /** TEME position (km) at `unixMs` into `r`; false if SGP4 reports an error. */
+  temeAt(unixMs: number, r: Float64Array): boolean {
+    if (this.initError !== 0) return false;
+    const date = julianDateFromUnixMs(unixMs);
+    const epoch = { jd: this.satrec.jdsatepoch, frac: this.satrec.jdsatepochF };
+    return sgp4(this.satrec, minutesSinceEpoch(epoch, date), r, this.v) === 0;
+  }
+
   /** State at `unixMs`, or null if SGP4 reports an error there. */
   at(unixMs: number): SatelliteState | null {
     const date = julianDateFromUnixMs(unixMs);
