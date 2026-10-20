@@ -53,4 +53,6 @@ repository activity. Re-enable it from the Actions tab if the data stops updatin
 
 ## Attribution
 
-Orbital data courtesy of [CelesTrak](https://celestrak.org) (Dr. T.S. Kelso).
+- Orbital data courtesy of [CelesTrak](https://celestrak.org) (Dr. T.S. Kelso).
+- Earth textures: NASA Earth Observatory (Blue Marble: Next Generation; Black Marble 2016).
+  See [public/textures/CREDITS.md](public/textures/CREDITS.md).
