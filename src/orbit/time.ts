@@ -16,6 +16,54 @@ export const JD_J2000 = 2451545.0;
 const TWO_PI = 2 * Math.PI;
 const DEG2RAD = Math.PI / 180;
 
+/**
+ * Julian date from calendar UTC (valid 1900–2100), as Vallado's jday_SGP4.
+ * `sec` may carry a fraction.
+ */
+export function julianDate(
+  year: number,
+  mon: number,
+  day: number,
+  hr: number,
+  minute: number,
+  sec: number,
+): JulianDate {
+  let jd =
+    367 * year -
+    Math.floor(7 * (year + Math.floor((mon + 9) / 12)) * 0.25) +
+    Math.floor((275 * mon) / 9) +
+    day +
+    1721013.5;
+  let frac = (sec + minute * 60 + hr * 3600) / 86400;
+  if (Math.abs(frac) > 1) {
+    const whole = Math.floor(frac);
+    jd += whole;
+    frac -= whole;
+  }
+  return { jd, frac };
+}
+
+/**
+ * Splits a fractional day-of-year into calendar parts, as Vallado's
+ * days2mdhms_SGP4 (including its leap-year rule, valid 1901–2099).
+ */
+export function daysToMdhms(year: number, days: number) {
+  const lmonth = [0, 31, year % 4 === 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const dayofyr = Math.floor(days);
+  let i = 1;
+  let inttemp = 0;
+  while (dayofyr > inttemp + (lmonth[i] ?? 0) && i < 12) {
+    inttemp += lmonth[i] ?? 0;
+    i++;
+  }
+  let temp = (days - dayofyr) * 24;
+  const hr = Math.floor(temp);
+  temp = (temp - hr) * 60;
+  const minute = Math.floor(temp);
+  const sec = (temp - minute) * 60;
+  return { mon: i, day: dayofyr - inttemp, hr, minute, sec };
+}
+
 export function julianDateFromUnixMs(ms: number): JulianDate {
   const days = Math.floor(ms / MS_PER_DAY);
   return { jd: JD_UNIX_EPOCH + days, frac: (ms - days * MS_PER_DAY) / MS_PER_DAY };
