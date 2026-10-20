@@ -1,0 +1,4 @@
+dist
+public/data
+.cache
+package-lock.json

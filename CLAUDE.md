@@ -3,6 +3,7 @@
 Static, browser-based 3D tracker for the active satellite catalog, deployed to GitHub Pages.
 
 ## Roles
+
 - The user is the decision-maker. You are the implementer.
 - Surface every non-obvious design decision as explicit options with tradeoffs. Do not decide silently.
 - Never add a dependency without asking first and justifying it.
@@ -10,6 +11,7 @@ Static, browser-based 3D tracker for the active satellite catalog, deployed to G
 - Work one phase at a time. Stop at the end of each phase for review. One commit per logical step, using conventional commit messages.
 
 ## Hard constraints
+
 - GitHub Pages is static hosting: no server, no custom HTTP headers.
   - Therefore no SharedArrayBuffer (it needs COOP/COEP headers). Use Transferable ArrayBuffers with double-buffering between workers and the main thread.
 - Graphics: raw WebGL2 only. No Three.js or other rendering libraries. Write shaders in GLSL ES 3.00, imported via Vite `?raw`.
@@ -18,12 +20,14 @@ Static, browser-based 3D tracker for the active satellite catalog, deployed to G
 - Runtime dependencies: React, React DOM, Tailwind, and shadcn/ui primitives. Anything else needs approval.
 
 ## Stack
+
 - Vite + React 18+ (functional components, hooks), TypeScript strict mode, ES modules.
 - Tailwind v4 and shadcn/ui for the UI chrome only.
 - Vitest for tests. ESLint + Prettier: 2-space indent, semicolons.
 - Node 24 LTS (pinned in `.nvmrc`), npm.
 
 ## Architecture
+
 - Data pipeline (GitHub Actions, scheduled every few hours plus on push to main):
   - Fetch GP data from CelesTrak's active group.
     - Prefer OMM (JSON/CSV) over TLE, since 5-digit catalog numbers are running out.
@@ -54,6 +58,7 @@ Static, browser-based 3D tracker for the active satellite catalog, deployed to G
 - Simulated time: one clock source (epoch + rate multiplier) shared by UI, workers and renderer.
 
 ## Verification
+
 - SGP4 matches the reference verification test cases from Vallado et al., "Revisiting Spacetrack Report #3" (AIAA 2006-6753).
   - Locate the published test inputs and expected outputs and verify their provenance.
   - Check the license of any reference code before porting, and attribute it.
@@ -64,6 +69,7 @@ Static, browser-based 3D tracker for the active satellite catalog, deployed to G
 - Before marking a phase done: typecheck, lint, all tests pass, `npm run build` succeeds.
 
 ## Phases
+
 1. Scaffold: Vite + React + TS + Tailwind + shadcn/ui, lint/test setup, Pages deploy workflow with correct Vite `base`, data pipeline job producing the catalog file.
 2. WebGL2 foundation: GL helpers, camera, textured Earth with terminator, render loop decoupled from React.
 3. Orbit library: element parsing, SGP4/SDP4, TEME to ECEF, the verification suite above.
