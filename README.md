@@ -69,6 +69,14 @@ Verification:
   by orbit regime and constellation. Constellations are matched by object name, since the
   catalog carries no group membership.
 - **Time** (bottom): pause, rates from −600× to 3600×, and **Now**.
+- **Orbit and ground track**: the selected satellite's orbit (one period, inertial frame) and
+  its ground track (± one period) are drawn; the past half is dimmed.
+- **Passes**: set a location ("Use my location" or typed coordinates; stored only in your
+  browser) to list the next passes within 48 h, with direction, duration, peak elevation and
+  naked-eye visibility (satellite sunlit, observer's Sun below −6°, elevation ≥ 10°). Click a
+  pass to jump the clock to it.
+- **Moon and solar system**: zoom out to see the Moon and its orbit. **Solar system** switches
+  to a heliocentric view of the Sun and planets with day-scale time rates.
 
 Picking is done on the GPU: satellite IDs are rendered into an integer target around the
 pointer and read back asynchronously (pixel-pack buffer + fence), so it never stalls a frame.
@@ -109,5 +117,10 @@ repository activity. Re-enable it from the Actions tab if the data stops updatin
 - Orbital data courtesy of [CelesTrak](https://celestrak.org) (Dr. T.S. Kelso).
 - SGP4 ported from David Vallado's reference implementation (Vallado, Crawford, Hujsak and
   Kelso, AIAA 2006-6753), <https://celestrak.org/publications/AIAA/2006-6753/>.
+- Planet positions: E. M. Standish and J. G. Williams, "Keplerian Elements for Approximate
+  Positions of the Major Planets", JPL Solar System Dynamics,
+  <https://ssd.jpl.nasa.gov/planets/approx_pos.html> (Table 1, valid 1800–2050). Checked
+  against JPL Horizons (DE441).
+- Moon and Sun: low-precision formulae from the Astronomical Almanac.
 - Earth textures: NASA Earth Observatory (Blue Marble: Next Generation; Black Marble 2016).
   See [public/textures/CREDITS.md](public/textures/CREDITS.md).
