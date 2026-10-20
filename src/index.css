@@ -126,4 +126,10 @@
   html {
     @apply font-sans;
   }
+  /* Full-viewport app shell; the canvas must never size the layout. */
+  html,
+  body,
+  #root {
+    @apply h-full overflow-hidden;
+  }
 }
