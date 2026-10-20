@@ -38,6 +38,17 @@ describe('PerfMonitor', () => {
     expect(snap?.propagation).toBeNull();
   });
 
+  it('averages CPU time over every sample, including the first frame (no interval yet)', () => {
+    let now = 0;
+    const monitor = new PerfMonitor(500, () => now);
+    monitor.frame({ intervalMs: 0, cpuMs: 30 }); // first frame: shader compile
+    now = 600;
+    monitor.frame({ intervalMs: 600, cpuMs: 2 });
+    const snap = monitor.store.get();
+    expect(snap?.cpuMs).toBe(16);
+    expect(snap?.cpuMsMax).toBe(30);
+  });
+
   it('reports propagation rates as deltas over the period', () => {
     let now = 0;
     let s = stats();

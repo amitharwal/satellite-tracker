@@ -50,6 +50,7 @@ export class PerfMonitor {
   private frames = 0;
   private intervalSum = 0;
   private cpuSum = 0;
+  private cpuSamples = 0;
   private cpuMax = 0;
   private last = { batches: 0, lateFrames: 0, totalWorkerMs: 0, totalRoundTripMs: 0 };
 
@@ -79,6 +80,7 @@ export class PerfMonitor {
       this.intervalSum += sample.intervalMs;
     }
     this.cpuSum += sample.cpuMs;
+    this.cpuSamples++;
     this.cpuMax = Math.max(this.cpuMax, sample.cpuMs);
 
     const now = this.now();
@@ -91,7 +93,7 @@ export class PerfMonitor {
     this.store.set({
       fps: (this.frames * 1000) / elapsed,
       frameMs: this.intervalSum / this.frames,
-      cpuMs: this.cpuSum / this.frames,
+      cpuMs: this.cpuSum / this.cpuSamples,
       cpuMsMax: this.cpuMax,
       propagation: stats && {
         ...stats,
@@ -106,6 +108,7 @@ export class PerfMonitor {
     this.frames = 0;
     this.intervalSum = 0;
     this.cpuSum = 0;
+    this.cpuSamples = 0;
     this.cpuMax = 0;
   }
 }
