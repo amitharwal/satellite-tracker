@@ -9,6 +9,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { GROUPS } from '@/data/groups';
 import type { SatelliteState } from '@/orbit/details';
 import { catalogIndex, clock, selection } from '@/state';
+import { PassesSection } from '@/ui/PassesSection';
 import { displayName, orPlaceholder } from '@/ui/format';
 import { useStore } from '@/ui/useStore';
 
@@ -67,7 +68,7 @@ export function InfoPanel() {
 
   return (
     <Card
-      className="pointer-events-auto w-80 gap-3 bg-black/75 p-4 text-sm text-neutral-100 backdrop-blur"
+      className="pointer-events-auto max-h-[calc(100vh-9rem)] w-80 gap-3 overflow-y-auto bg-black/75 p-4 text-sm text-neutral-100 backdrop-blur"
       aria-label="Selected satellite"
     >
       <div className="flex items-start justify-between gap-2">
@@ -147,6 +148,13 @@ export function InfoPanel() {
           <LocateFixed /> Follow
         </Toggle>
       </div>
+
+      {satellite?.initError === 0 && (
+        <>
+          <Separator />
+          <PassesSection index={index} />
+        </>
+      )}
     </Card>
   );
 }
