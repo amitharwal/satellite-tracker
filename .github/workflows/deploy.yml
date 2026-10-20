@@ -1,0 +1,93 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Every 4 hours at :17. CelesTrak updates every 2 hours; the off-hour minute
+    # avoids the top-of-hour rush on both GitHub and CelesTrak.
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time. Queued runs wait rather than cancel, so an in-progress
+# deployment always completes.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Code checks run before the fetch so a broken commit never spends a
+      # CelesTrak download.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+
+      # Raw CelesTrak data from the previous run. The pipeline reuses it if it
+      # is under 2 hours old (CelesTrak answers repeat downloads with 403), and
+      # uses its last good count for the shrinkage check.
+      - name: Restore CelesTrak cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .cache/celestrak
+          key: celestrak-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: celestrak-
+
+      - name: Fetch and transform catalog
+        run: npm run data:fetch
+
+      # Saved even when validation fails, so a bad download is not re-requested
+      # inside the same 2-hour window.
+      - name: Save CelesTrak cache
+        if: always() && hashFiles('.cache/celestrak/meta.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .cache/celestrak
+          key: celestrak-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v6
+
+      - name: Build
+        run: npm run build
+        env:
+          # base_path is "/repo" or "" (no trailing slash); Vite wants one.
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
