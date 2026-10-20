@@ -18,7 +18,8 @@
     "test:watch": "vitest",
     "data:fetch": "node scripts/pipeline/fetch-catalog.ts",
     "data:offline": "node scripts/pipeline/fetch-catalog.ts --offline",
-    "verify:diff": "node scripts/verify/diff-satellitejs.ts"
+    "verify:diff": "node scripts/verify/diff-satellitejs.ts",
+    "bench:propagation": "node scripts/verify/bench-propagation.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "4.3.3",
