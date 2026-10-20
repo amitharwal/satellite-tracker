@@ -7,6 +7,7 @@ import { OrbitCamera } from './camera.ts';
 import { attachOrbitControls } from './controls.ts';
 import { createEllipsoidMesh } from './ellipsoid.ts';
 import { mat4, multiply } from './math.ts';
+import { SatelliteLayer, type PositionSlice } from './satellites.ts';
 import { createProgram, getUniforms } from './shader.ts';
 import earthFragSource from './shaders/earth.frag.glsl?raw';
 import earthVertSource from './shaders/earth.vert.glsl?raw';
@@ -24,6 +25,24 @@ export interface RendererOptions {
   textures: { day: string; night: string };
   /** Upper bound on device pixel ratio, to cap fill cost on high-DPI screens. */
   maxPixelRatio?: number;
+  /** Satellite dot diameter in CSS pixels. */
+  satelliteSizePx?: number;
+  /** Called after every frame with the rAF interval and the CPU time spent rendering. */
+  onFrame?: (sample: FrameSample) => void;
+}
+
+export interface FrameSample {
+  intervalMs: number;
+  cpuMs: number;
+}
+
+/** What the renderer needs from the propagation side. */
+export interface SatelliteFeed {
+  count: number;
+  /** Orbit regime per satellite (static instance attribute). */
+  regimes: Uint8Array;
+  /** Advances the window schedule; returns the interpolation factor, or null if no data yet. */
+  tick: () => number | null;
 }
 
 const LAT_SEGMENTS = 128;
@@ -52,6 +71,8 @@ export class Renderer {
   private readonly options: RendererOptions;
   private readonly gl: WebGL2RenderingContext | null;
   private resources: GpuResources | null = null;
+  private satelliteFeed: SatelliteFeed | null = null;
+  private satelliteLayer: SatelliteLayer | null = null;
   private frameHandle = 0;
   private lastFrameMs: number | null = null;
   private pendingSize: { width: number; height: number } | null = null;
@@ -114,6 +135,39 @@ export class Renderer {
     this.deleteResources();
   }
 
+  /**
+   * Connects the propagation side. Windows arrive via uploadSatellites (into
+   * the back buffer) and become visible on swapSatellites.
+   */
+  setSatellites(feed: SatelliteFeed | null): void {
+    this.satelliteLayer?.dispose();
+    this.satelliteLayer = null;
+    this.satelliteFeed = feed;
+    this.createSatelliteLayer();
+  }
+
+  uploadSatellites(slices: readonly PositionSlice[]): void {
+    this.satelliteLayer?.uploadBack(slices);
+  }
+
+  swapSatellites(): void {
+    this.satelliteLayer?.swap();
+  }
+
+  private createSatelliteLayer(): void {
+    const gl = this.gl;
+    const feed = this.satelliteFeed;
+    if (!gl || !feed || gl.isContextLost() || this.satelliteLayer) return;
+    try {
+      this.satelliteLayer = new SatelliteLayer(gl, feed.count, feed.regimes);
+    } catch (error) {
+      this.setStatus({
+        kind: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private setStatus(status: RendererStatus): void {
     this.options.status.set(status);
   }
@@ -152,6 +206,7 @@ export class Renderer {
         nightTexture: createPlaceholderTexture(gl, [0, 0, 0, 255]),
       };
       this.setStatus({ kind: 'running' });
+      this.createSatelliteLayer();
       void this.loadTextures();
     } catch (error) {
       this.setStatus({
@@ -198,6 +253,8 @@ export class Renderer {
     for (const buffer of r.buffers) gl.deleteBuffer(buffer);
     gl.deleteTexture(r.dayTexture);
     gl.deleteTexture(r.nightTexture);
+    this.satelliteLayer?.dispose();
+    this.satelliteLayer = null;
   }
 
   private readonly onResize = (entries: ResizeObserverEntry[]) => {
@@ -233,6 +290,7 @@ export class Renderer {
     this.stop();
     this.textureLoad.abort();
     this.resources = null; // GPU objects are already gone
+    this.satelliteLayer = null; // recreated (empty) on restore; refilled by the next window
     this.setStatus({ kind: 'context-lost' });
   };
 
@@ -244,9 +302,11 @@ export class Renderer {
 
   private readonly frame = (nowMs: number) => {
     this.frameHandle = requestAnimationFrame(this.frame);
-    const dt = this.lastFrameMs === null ? 0 : Math.min(0.1, (nowMs - this.lastFrameMs) / 1000);
+    const intervalMs = this.lastFrameMs === null ? 0 : nowMs - this.lastFrameMs;
     this.lastFrameMs = nowMs;
-    this.render(dt);
+    const start = performance.now();
+    this.render(Math.min(0.1, intervalMs / 1000));
+    this.options.onFrame?.({ intervalMs, cpuMs: performance.now() - start });
   };
 
   private render(dt: number): void {
@@ -288,5 +348,13 @@ export class Renderer {
     gl.bindVertexArray(r.vao);
     gl.drawElements(gl.TRIANGLES, r.indexCount, r.indexType, 0);
     gl.bindVertexArray(null);
+
+    // Always tick so the schedule keeps advancing even while the layer is rebuilt.
+    const t = this.satelliteFeed?.tick() ?? null;
+    if (t !== null && this.satelliteLayer) {
+      const pixelRatio = width / Math.max(1, this.canvas.clientWidth);
+      const sizePx = (this.options.satelliteSizePx ?? 3) * pixelRatio;
+      this.satelliteLayer.draw(this.viewProj, t, width, height, sizePx);
+    }
   }
 }
